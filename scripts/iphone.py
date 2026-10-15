@@ -96,9 +96,9 @@ async def run(args: argparse.Namespace) -> None:
                 await installer.install_from_local(str(args.ipa))
                 apps = await installer.get_apps()
                 installed = apps.get(bundle)
-                if (
-                    installed is None
-                    or installed.get("CFBundleVersion") != info["CFBundleVersion"]
+                if installed is None or any(
+                    installed.get(key) != info.get(key)
+                    for key in ("CFBundleVersion", "CFBundleShortVersionString")
                 ):
                     raise RuntimeError("Installed build could not be verified.")
                 print(f"Installed {bundle}, build {info['CFBundleVersion']}.")

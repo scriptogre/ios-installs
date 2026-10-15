@@ -1,2 +1,6 @@
 __pycache__/
 shortcuts/*.unsigned.shortcut
+*.ipa
+*.mobileprovision
+*.p12
+*.p8
