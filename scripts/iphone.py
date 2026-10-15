@@ -2,7 +2,7 @@
 # requires-python = ">=3.13"
 # dependencies = ["pymobiledevice3==11.31.0", "asn1crypto==1.5.1"]
 # ///
-"""Inspect or install a signed IPA on a paired iPhone over local Wi-Fi."""
+"""Inspect or install a signed IPA on a paired iPhone over Wi-Fi or Tailscale."""
 
 import argparse
 import asyncio
@@ -64,22 +64,25 @@ def inspect_package(path: pathlib.Path, udid: str) -> dict[str, Any]:
 async def run(args: argparse.Namespace) -> None:
     record = plistlib.loads(args.pairing_record.read_bytes())
     info = inspect_package(args.ipa, record["remote_identifier"]) if args.ipa else None
-    answers = await browse_remotepairing(timeout=3)
-    answer = next(
-        (
-            answer
-            for answer in answers
-            if answer.host.rstrip(".").casefold()
-            == record["hostname"].rstrip(".").casefold()
-        ),
-        None,
-    )
-    if answer is None or not answer.addresses:
-        raise RuntimeError("iPhone not found. Keep it awake on the same Wi-Fi.")
-    address = next(
-        (a for a in answer.addresses if ":" not in a.ip), answer.addresses[0]
-    )
-    service = PairedTunnel(record, address.full_ip, answer.port)
+    host, port = args.host, args.port
+    if host is None:
+        answers = await browse_remotepairing(timeout=3)
+        answer = next(
+            (
+                answer
+                for answer in answers
+                if answer.host.rstrip(".").casefold()
+                == record["hostname"].rstrip(".").casefold()
+            ),
+            None,
+        )
+        if answer is None or not answer.addresses:
+            raise RuntimeError("iPhone not found. Keep it awake on the same Wi-Fi.")
+        address = next(
+            (a for a in answer.addresses if ":" not in a.ip), answer.addresses[0]
+        )
+        host, port = address.full_ip, answer.port
+    service = PairedTunnel(record, host, port)
     try:
         await service.connect(autopair=False)
         async with (
@@ -112,6 +115,8 @@ def main() -> int:
     parser.add_argument(
         "ipa", type=pathlib.Path, nargs="?", help="Omit to check connectivity."
     )
+    parser.add_argument("--host", help="iPhone IP or hostname; skips local discovery.")
+    parser.add_argument("--port", type=int, default=49152, help="Remote pairing port.")
     args = parser.parse_args()
     if os.geteuid() != 0:
         return subprocess.run(
