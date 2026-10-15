@@ -36,6 +36,17 @@ class PairedTunnel(RemotePairingTunnelService):
         return self.record
 
 
+def inspect_profile(archive: zipfile.ZipFile, path: str, udid: str) -> dict[str, Any]:
+    signed = cms.ContentInfo.load(archive.read(path))
+    profile = plistlib.loads(signed["content"]["encap_content_info"]["content"].native)
+    if udid not in profile.get("ProvisionedDevices", []):
+        raise ValueError("This IPA is not signed for this iPhone.")
+    expiration = profile["ExpirationDate"].replace(tzinfo=datetime.UTC)
+    if expiration <= datetime.datetime.now(datetime.UTC):
+        raise ValueError("This IPA's provisioning profile has expired.")
+    return profile
+
+
 def inspect_package(path: pathlib.Path, udid: str) -> dict[str, Any]:
     with zipfile.ZipFile(path) as archive:
         entries = [
@@ -49,15 +60,47 @@ def inspect_package(path: pathlib.Path, udid: str) -> dict[str, Any]:
         profile_path = (
             entries[0].removesuffix("Info.plist") + "embedded.mobileprovision"
         )
-        signed = cms.ContentInfo.load(archive.read(profile_path))
-        profile = plistlib.loads(
-            signed["content"]["encap_content_info"]["content"].native
-        )
-        if udid not in profile.get("ProvisionedDevices", []):
-            raise ValueError("This IPA is not signed for this iPhone.")
-        expiration = profile["ExpirationDate"].replace(tzinfo=datetime.UTC)
-        if expiration <= datetime.datetime.now(datetime.UTC):
-            raise ValueError("This IPA's provisioning profile has expired.")
+        profile = inspect_profile(archive, profile_path, udid)
+        if "SpotifyVersionShort" in info or info["CFBundleIdentifier"].startswith(
+            "com.spotify.client"
+        ):
+            bundle = "com.spotify.client.94F2Q36UHT"
+            if info["CFBundleIdentifier"] != bundle:
+                raise ValueError(f"Keep Spotify's installed bundle ID: {bundle}")
+            extension_path = (
+                entries[0].removesuffix("Info.plist")
+                + "PlugIns/IntentsExtension.appex/"
+            )
+            try:
+                extension = plistlib.loads(archive.read(extension_path + "Info.plist"))
+                extension_profile = inspect_profile(
+                    archive, extension_path + "embedded.mobileprovision", udid
+                )
+                archive.getinfo(extension_path + extension["CFBundleExecutable"])
+            except KeyError:
+                raise ValueError(
+                    "Spotify needs its signed Siri extension, not just Siri permission."
+                ) from None
+            if extension["CFBundleIdentifier"] != bundle + ".intents":
+                raise ValueError("Keep Spotify's Siri extension bundle ID.")
+            service = extension.get("NSExtension", {})
+            intents = service.get("NSExtensionAttributes", {}).get(
+                "IntentsSupported", []
+            )
+            if (
+                service.get("NSExtensionPointIdentifier") != "com.apple.intents-service"
+                or "INPlayMediaIntent" not in intents
+            ):
+                raise ValueError(
+                    "Spotify's Siri extension must declare its playback intent."
+                )
+            if any(
+                p["Entitlements"].get("com.apple.developer.siri") is not True
+                for p in (profile, extension_profile)
+            ):
+                raise ValueError(
+                    "Spotify and its extension both need Siri permission in their profiles."
+                )
         return info
 
 

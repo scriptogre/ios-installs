@@ -58,11 +58,45 @@ Extensions need their own profiles; pass a separate `-m` for each profile.
 Re-signing does not remove App Store encryption or grant another developer's capabilities.
 Certificates and profiles expire; renew them before signing further updates.
 
-Check the credential wrapper:
+Run the installer and signing tests:
 
 ```sh
-uv run --with cryptography==50.0.2 --with onepasswordconnectsdk==2.1.0 python -m unittest discover -s scripts
+uv run --with cryptography==50.0.2 --with onepasswordconnectsdk==2.1.0 --with pymobiledevice3==11.31.0 --with asn1crypto==1.5.1 python -m unittest discover -s scripts
 ```
+
+## Update Spotify without losing Siri or data
+
+Use a **patched EeveeSpotify IPA containing `IntentsExtension.appex`**.
+A filename mentioning Siri or a Siri-enabled profile alone is insufficient.
+The working source is the patched 6.6.7 / Spotify 9.1.68 build linked from the
+[maintainer's release](https://github.com/SideloadLabs/EeveeSpotifyReincarnated/releases/tag/v6.6.7).
+
+Keep the installed bundle ID and existing keychain/app groups.
+Back up Documents, Library/Preferences, Library/Application Support and
+Library/Cookies with `pymobiledevice3` House Arrest before each update.
+Store backups privately outside this repository. Update in place; never uninstall.
+Compare the saved files after installation; iOS may change the container path.
+
+Sign the main app, Siri extension and Safari extension with their own profiles:
+
+```sh
+cd ~/Downloads/ios
+uv run ~/Projects/ios-installs/scripts/apple.py zsign \
+  -m Spotify-Siri.mobileprovision \
+  -m Spotify-Intents.mobileprovision \
+  -m OpenSpotifyExtension.mobileprovision \
+  -b com.spotify.client.94F2Q36UHT -z 6 -o EeveeSpotify-Siri.ipa SOURCE.ipa
+```
+
+The local profiles correspond to Apple profile IDs `Z5VL5K2KLA`, `5ZSJLHJ92C`
+and `ZUZN68R9YP`. Renew expired profiles with the same bundle IDs and capabilities.
+Keep the prefix compatibility patch included in the patched build.
+Additional extensions require their own profiles; do not remove the Siri extension.
+
+`iphone.py` rejects Spotify packages with a changed bundle ID, missing playback
+extension, or missing Siri permission in either profile, before connecting.
+Open Spotify after updating, then test Siri playback. These preflight checks cannot
+prove that future Spotify or iOS releases still work with Siri.
 
 ## Switch VPNs
 
