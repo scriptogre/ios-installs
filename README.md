@@ -1,4 +1,4 @@
 # iOS installs
 
-Open <https://scriptogre.github.io/ios-installs/> on a registered iPhone.
+Open <https://intelligentdnb.uk/ios-installs/> on a registered iPhone.
 One-tap installs for registered iPhones
